@@ -76,5 +76,16 @@ for v in V
 end 
 
 #contrainte 3 indique que chaque classe induit un sous graphe connecté --> donc on ne va pas l'inclure tout de usite car on va utiliser l'algo de séparation 
+# L’idée de la séparation est : 
+#ne pas ajouter toutes les contraintes au modèle, mais, à chaque relaxation linéaire (ou solution entière si nécessaire), 
+#chercher un sous-ensemble de contraintes violées et les ajouter au modèle.
+# On va donc regarder les composantes connexes dans chaque classe après une première solution
+# si une classe n'est pas connectée, on construit un séparateur et on ajoute la contrainte de séparateur pour ces sommets seulement
 
-for k in range 
+
+@objective(model, Max, (sum(w[v]*x[v,1] for v in V)))
+
+
+
+
+
