@@ -77,3 +77,4 @@ end
 
 #contrainte 3 indique que chaque classe induit un sous graphe connecté --> donc on ne va pas l'inclure tout de usite car on va utiliser l'algo de séparation 
 
+for k in range 
