@@ -38,153 +38,159 @@ function readWeightedGraph_paper(file::String)
     return E_list, W
 end
 
+function createDigraphFromGraph(E_list::Vector{Any}, W::Vector{Int64}, sources::Vector{Int64})
+    n = length(W)
+    k = length(sources)
+    D = DiGraph(n + k)
+    # Add the arcs on both directions
+    for (u,v) in E_list
+        add_edge!(D, u, v)
+        add_edge!(D, v, u)
+    end
+    # Add the k sources (all the sources are linked to all the nodes)
+    for i in sources
+        for v in 1:n
+            add_edge!(D, i, v)
+        end
+    end
+
+    return D
+end 
+
+
 # ----------------------
 # Lire l'instance
 # ----------------------
-file = "gg_15_15_a_1.in"  # Remplacer par ton fichier
-E, W_vect = readWeightedGraph_paper(file)
-n = length(W_vect)
+file = "G_ex_papier.txt"
+E_list, W = readWeightedGraph_paper(file)
+println("===== Recuperation de l'instance =====")
+println("Instance lue ", file)
+println("Arêtes du graphe (E)        : ", E_list)
+println("Nombre d'arêtes |E|         : ", length(E_list))
+println("Poids des sommets (W)       : ", W)
+println("===============================\n\n")
+
+
+
+# ----------------------
+# Initialiser les variables du problème
+# ----------------------
+Wtot = sum(W)
+n = length(W)
 V = 1:n
-k = 3 # nombre de partitions
-
-# Créer dictionnaire de poids
-w = Dict(i => W_vect[i] for i in V)
-
-println("Poids des sommets : ", w)
-Wtot = sum(values(w))
-println("Poids total : ", Wtot)
+k = 2 
+println("===== Problème initialisé =====")
+println("Nombre de sommets (n)      : ", n)
+println("Nombre de partitions (k)    : ", k)
+println("Sommets (V)                 : ", V)
+println("Poids des sommets (W)       : ", W)
+println("Poids total (Wtot)          : ", Wtot)
+println("===============================\n\n")
 
 # ----------------------
-# Graphe dirigé avec sources
+# Création du digraphe D
 # ----------------------
-sources = [Symbol("s$i") for i in 1:k]
-Vd = vcat(V, sources)
+sources = collect(n+1:n+k)
+V_and_sources = vcat(V, sources)
+D = createDigraphFromGraph(E_list, W, sources)
+A = collect(edges(D))
+println("===== Creation du digraph =====")
+println("Arcs du digraphe (A)        : ", A)
+println("Nombre d'arcs |A|           : ", length(A))
+println("Nombre de sommets dans D     : ", nv(D))
+println("Sources (sommets fictifs)   : ", sources)
+println("===============================\n\n")
 
-Ad = []
-for (u,v) in E
-    push!(Ad,(u,v)); push!(Ad,(v,u))
-end
-for s in sources
-    for v in V
-        push!(Ad,(s,v))
-    end
-end
+
 
 # ----------------------
 # Modèle JuMP
 # ----------------------
 model = Model(Gurobi.Optimizer)
 
+@variable(model, f[e in A] >= 0)
+@variable(model, y[e in A], Bin)
 
-set_optimizer_attribute(model, "TimeLimit", 900)  
-set_optimizer_attribute(model, "MIPGap", 0.001)   # 0.1 % d'écart toléré
+@objective(model, Max, sum(f[Edge(sources[1],v)] for v in V if Edge(sources[1],v) in A))
 
-
-
-@variable(model, f[Ad] >= 0)
-@variable(model, y[Ad], Bin)
-
-@objective(model, Max, sum(f[(sources[1],v)] for v in V if (sources[1],v) in Ad))
-
+## Constraints
+# (7)
 for i in 1:k-1
-    @constraint(model, sum(f[(sources[i],v)] for v in V if (sources[i],v) in Ad) <=
-                        sum(f[(sources[i+1],v)] for v in V if (sources[i+1],v) in Ad))
+    @constraint(model, sum(f[Edge(sources[i],v)] for v in V if Edge(sources[i],v) in A) <=
+                        sum(f[Edge(sources[i+1],v)] for v in V if Edge(sources[i+1],v) in A))
 end
 
+# (8)
 for v in V
-    inflow = sum(f[(u,v)] for u in Vd if (u,v) in Ad)
-    outflow = sum(f[(v,u)] for u in Vd if (v,u) in Ad)
-    @constraint(model, inflow - outflow == w[v])
+    inflow = sum(f[Edge(u,v)] for u in V_and_sources if Edge(u,v) in A)
+    outflow = sum(f[Edge(v,u)] for u in V_and_sources if Edge(v,u) in A)
+    @constraint(model, inflow - outflow == W[v])
 end
 
-for a in Ad
-    @constraint(model, f[a] <= Wtot * y[a])
+# (9)
+for e in A
+    @constraint(model, f[e] <= Wtot * y[e]) 
 end
 
+# (10)
 for s in sources
-    @constraint(model, sum(y[(s,v)] for v in V if (s,v) in Ad) <= 1)
+    @constraint(model, sum(y[Edge(s,v)] for v in V if Edge(s,v) in A) <= 1)
 end
 
+# # (11)
 for v in V
-    @constraint(model, sum(y[(u,v)] for u in Vd if (u,v) in Ad) <= 1)
+    @constraint(model, sum(y[Edge(u,v)] for u in  V_and_sources if Edge(u,v) in A) <= 1)
 end
+
+println("\n\n MODEL : ", model, "\n\n")
 
 # ----------------------
 # Résolution
 # ----------------------
-optimize!(model)
-println("Status = ", termination_status(model))
-println("Valeur optimale = ", objective_value(model))
+JuMP.optimize!(model)
+println("Status = ", JuMP.termination_status(model))
+println("Valeur optimale = ", JuMP.objective_value(model))
 
-# ----------------------
-# Fonction pour reconstruire partition complète
-# ----------------------
-function reconstruire_partition(s, V, Ad, y)
-    partition = Set{Int}()
-    file = []
 
-    # commencer avec les arcs activés de la source
-    for v in V
-        if value(y[(s,v)]) > 0.5
-            push!(partition, v)
-            push!(file, v)
-        end
+
+
+
+# # ----------------------
+# # Visualisation des variables
+yval = value.(y)
+
+# Forêt dirigée des arcs sélectionnés (y = 1)
+H = DiGraph(n + k)
+for e in A
+    if yval[e] > 0.5
+        add_edge!(H, src(e), dst(e))
     end
+end
 
-    # BFS sur les arcs activés entre sommets
-    while !isempty(file)
-        u = popfirst!(file)
-        for v in V
-            if v != u && ( (u,v) in Ad && value(y[(u,v)]) > 0.5 ) && !(v in partition)
-                push!(partition, v)
-                push!(file, v)
-            elseif v != u && ( (v,u) in Ad && value(y[(v,u)]) > 0.5 ) && !(v in partition)
-                push!(partition, v)
-                push!(file, v)
+# Affectation par simple exploration depuis chaque source
+part = fill(0, n)                
+for (i, s) in enumerate(sources)
+    stack = [s]
+    seen = falses(n + k); seen[s] = true
+    while !isempty(stack)
+        u = pop!(stack)
+        for v in outneighbors(H, u)
+            if !seen[v]
+                seen[v] = true
+                push!(stack, v)
+                v <= n && (part[v] = i)   # affecter si c'est un vrai sommet
             end
         end
     end
-
-    return sort(collect(partition))
 end
 
-# ----------------------
-# Extraire toutes les partitions complètes
-# ----------------------
-partitions = Dict{Symbol, Vector{Int}}()
-for s in sources
-    partitions[s] = reconstruire_partition(s, V, Ad, y)
-end
-println("Partitions complètes : ", partitions)
+# Résumé final des partitions trouvées
+classes = [findall(v -> part[v] == i, 1:n) for i in 1:k]
+wp = [sum(W[v] for v in classes[i]) for i in 1:k]
+minw = minimum(wp)
 
-# ----------------------
-# Calcul des poids de chaque partition
-# ----------------------
-poids_partitions = Dict{Symbol, Int}()
-for (s, nodes) in partitions
-    poids_partitions[s] = sum(w[v] for v in nodes)
-end
-println("Poids des partitions : ", poids_partitions)
-println("Poids minimum = ", minimum(values(poids_partitions)))
-println("Poids maximum = ", maximum(values(poids_partitions)))
-
-# ----------------------
-# Tracé du graphe
-# ----------------------
-g = Graphs.SimpleGraph(length(V))
-for (u,v) in E
-    Graphs.add_edge!(g, u, v)
-end
-
-# Palette de couleurs
-palette = [colorant"red", colorant"blue", colorant"green", colorant"orange", colorant"purple"]
-colors_index = [0 for _ in V]
-for (i,s) in enumerate(sources)
-    for v in partitions[s]
-        colors_index[v] = i
-    end
-end
-
-node_colors = [c==0 ? colorant"gray" : palette[c] for c in colors_index]
-
-GraphPlot.gplot(g, nodefillc=node_colors)
+println("\n\n===== Résultat final =====")
+println("Nombres de classes souhaitées : ", k)
+println("Partitions : ", classes)
+println("Poids par classe : ", wp, "  -> min = ", minw)
+println("===========================\n\n")
