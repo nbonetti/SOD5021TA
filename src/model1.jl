@@ -87,71 +87,68 @@ println("Poids des sommets (W)       : ", W)
 println("Poids total (Wtot)          : ", Wtot)
 println("===============================\n\n")
 
-# ----------------------
-# Création du digraphe D
-# ----------------------
-sources = collect(n+1:n+k)
-V_and_sources = vcat(V, sources)
-D = createDigraphFromGraph(E_list, W, sources)
-A = collect(edges(D))
-println("===== Creation du digraph =====")
-println("Arcs du digraphe (A)        : ", A)
-println("Nombre d'arcs |A|           : ", length(A))
-println("Nombre de sommets dans D     : ", nv(D))
-println("Sources (sommets fictifs)   : ", sources)
-println("===============================\n\n")
 
 
 
 # ----------------------
-# Modèle JuMP
+# Création du modele de flot
 # ----------------------
-model = Model(Gurobi.Optimizer)
+function create_flow_model(E_list, W, Wtot, n, V, k)
+    # ----------------------
+    # Création du digraphe D
+    # ----------------------
+    sources = collect(n+1:n+k)
+    V_and_sources = vcat(V, sources)
+    D = createDigraphFromGraph(E_list, W, sources)
+    A = collect(edges(D))
+    println("===== Creation du digraph =====")
+    println("Arcs du digraphe (A)        : ", A)
+    println("Nombre d'arcs |A|           : ", length(A))
+    println("Nombre de sommets dans D     : ", nv(D))
+    println("Sources (sommets fictifs)   : ", sources)
+    println("===============================\n\n")
 
-@variable(model, f[e in A] >= 0)
-@variable(model, y[e in A], Bin)
+    # ----------------------
+    # Modèle JuMP
+    # ----------------------
+    model = Model(Gurobi.Optimizer)
 
-@objective(model, Max, sum(f[Edge(sources[1],v)] for v in V if Edge(sources[1],v) in A))
+    @variable(model, f[e in A] >= 0)
+    @variable(model, y[e in A], Bin)
 
-## Constraints
-# (7)
-for i in 1:k-1
-    @constraint(model, sum(f[Edge(sources[i],v)] for v in V if Edge(sources[i],v) in A) <=
-                        sum(f[Edge(sources[i+1],v)] for v in V if Edge(sources[i+1],v) in A))
+    @objective(model, Max, sum(f[Edge(sources[1],v)] for v in V if Edge(sources[1],v) in A))
+
+    ## Constraints
+    # (7)
+    for i in 1:k-1
+        @constraint(model, sum(f[Edge(sources[i],v)] for v in V if Edge(sources[i],v) in A) <=
+                            sum(f[Edge(sources[i+1],v)] for v in V if Edge(sources[i+1],v) in A))
+    end
+
+    # (8)
+    for v in V
+        inflow = sum(f[Edge(u,v)] for u in V_and_sources if Edge(u,v) in A)
+        outflow = sum(f[Edge(v,u)] for u in V_and_sources if Edge(v,u) in A)
+        @constraint(model, inflow - outflow == W[v])
+    end
+
+    # (9)
+    for e in A
+        @constraint(model, f[e] <= Wtot * y[e]) 
+    end
+
+    # (10)
+    for s in sources
+        @constraint(model, sum(y[Edge(s,v)] for v in V if Edge(s,v) in A) <= 1)
+    end
+
+    # # (11)
+    for v in V
+        @constraint(model, sum(y[Edge(u,v)] for u in  V_and_sources if Edge(u,v) in A) <= 1)
+    end
+
+    return model, D, A, sources, V, V_and_sources
 end
-
-# (8)
-for v in V
-    inflow = sum(f[Edge(u,v)] for u in V_and_sources if Edge(u,v) in A)
-    outflow = sum(f[Edge(v,u)] for u in V_and_sources if Edge(v,u) in A)
-    @constraint(model, inflow - outflow == W[v])
-end
-
-# (9)
-for e in A
-    @constraint(model, f[e] <= Wtot * y[e]) 
-end
-
-# (10)
-for s in sources
-    @constraint(model, sum(y[Edge(s,v)] for v in V if Edge(s,v) in A) <= 1)
-end
-
-# # (11)
-for v in V
-    @constraint(model, sum(y[Edge(u,v)] for u in  V_and_sources if Edge(u,v) in A) <= 1)
-end
-
-println("\n\n MODEL : ", model, "\n\n")
-
-# ----------------------
-# Résolution
-# ----------------------
-JuMP.optimize!(model)
-println("Status = ", JuMP.termination_status(model))
-println("Valeur optimale = ", JuMP.objective_value(model))
-
-
 
 
 
