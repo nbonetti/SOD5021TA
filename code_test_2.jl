@@ -34,8 +34,8 @@ function readWeightedGraph_paper(file::String)
 end
 
 ## test de cette focntion avec un simple graphe 
-#file = "G_ex_papier.txt"
-file = "gg_05_05_a_1.in"
+file = "G_ex_papier.txt"
+#file = "gg_05_05_a_1.in"
 E, W_vect = readWeightedGraph_paper(file)
 n = length(W_vect)
 V = 1:n
@@ -179,8 +179,8 @@ end
 # ----------------------------
 # Programme principal
 # ----------------------------
-#file = "G_ex_papier.txt"
-file = "gg_05_05_a_1.in"
+file = "G_ex_papier.txt"
+#file = "gg_05_05_a_1.in"
 E, W_vect = readWeightedGraph_paper(file)
 n = length(W_vect)
 V = 1:n
@@ -255,6 +255,7 @@ optimize!(model)
 
 function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
     iter = 0
+    total_added = 0 
     while true
         iter += 1
         println("==============================")
@@ -266,6 +267,7 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
         # on peut choisir un seuil thr pour déterminer si un sommet est "dans" une classe
         # si une composante ets violée, on ajoute la contrainte au modèle et on peut augmenter added
         added = separation_on_components!(model, x, G, V, k; thr=thr)
+        total_added += added
         println("Contraintes ajoutées : ", added)
         if added == 0 || iter >= max_iter
             println("Aucune contrainte supplémentaire nécessaire. Fin.")
@@ -282,11 +284,14 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
     println("==============================")
     println("Statut : ", termination_status(model))
     println("Valeur obj : ", objective_value(model))
+    println("Nombre total de contraintes ajoutées : ", total_added)
     #println("Solution x : ", value.(x))
 end
 
 # Appel :
 run_separation!(model, x, G, collect(V), k)
+t1 = @elapsed run_separation!(model, x, G, collect(V), k)
+println("Temps méthode code 2 : ", t1, " secondes")
 
 
 
