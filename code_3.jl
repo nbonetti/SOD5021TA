@@ -85,42 +85,8 @@ println("Liste des arêtes du graphe : ", edges(G))
 
 
 # ----------------------------
-# Fonction pour obtenir les voisins d'un ensemble de sommets
-# on a besoin de cette liste car on va faire un problème de séparation et il nous les faut pour les contraintes de type cut-based 
-# cela nous servira à garantir que chaque classe induit un sous graphe connecté
-#puisque notre ocntarinte fait que si deux sommets u et v sont dans la meme classe i, il existe un chemin connecté entre eux à l'intérieur de cette classe. 
-# on va créer un séparateur S: si on peut enlever les sommets de S: u et v seraient dans deux composantes différentes
-# si aucun sommet de S est dans la classe i, alors u et v ne sont pas connectés et on a une violation de la contrainte 
+#on utilise plus la fonction boundary_neighbors car on calclule les voisins directement avec union(neighbors(G, u), neighbors(G, v))
 # ----------------------------
-function boundary_neighbors(G::SimpleGraph, C::Vector{Int})
-
-    #on veut savoir si un sommet est dans le vecteur C
-    inC = zeros(Bool, nv(G)) 
-    for v in C
-        inC[v] = true
-    end
-    # il faut qu'on stocke les voisins qui sont pas dans C
-    N = Int[]
-    # ici on boucle sur les sommets de C
-    for v in C
-        # on boucle sur les voisins de v
-        for u in neighbors(G, v)
-            if !inC[u] # on vérifie si le voisin n'est pas dans C 
-                push!(N, u) # on l'ajoute à la liste des voisins 
-            end
-        end
-    end
-    return unique(N) #ici on essaie de vérifier qu'il n'y a pas de doublons 
-end
-println("==============================")
-println("==============================")
-println("TEST de la fonction boundary_neighbors")
-println("==============================")
-println("==============================")
-println("Voisins de {1,2} : ", boundary_neighbors(G, [1,2]))
-println("Voisins de {3,4} : ", boundary_neighbors(G, [3,4]))
-println("Voisins de {5} : ", boundary_neighbors(G, [5]))    
-println("Voisins de {1,2,3} : ", boundary_neighbors(G, [1,2,3]))
 
 
 function separation_connectivity!(model::Model, x, G::SimpleGraph, V::Vector{Int}, k::Int; thr=0.5)
@@ -142,6 +108,7 @@ function separation_connectivity!(model::Model, x, G::SimpleGraph, V::Vector{Int
             if u < v && !((min(u,v), max(u,v)) in Eset)
                 # Construire le digraphe Di pour la min-cut
                 # Ici on fait une approche simplifiée : on prend voisins communs
+                # on en calcule plus les composantes mauis on boucle directement sur toutes les paires de sommets non adjacents dans S_i
                 Nuv = union(neighbors(G, u), neighbors(G, v))
                 if !isempty(Nuv)
                     # Contrainte de type connectivity lifted
@@ -235,6 +202,7 @@ optimize!(model)
 
 function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
     iter = 0
+    total_added = 0
     while true
         iter += 1
         println("==============================")
@@ -246,6 +214,7 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
         # on peut choisir un seuil thr pour déterminer si un sommet est "dans" une classe
         # si une composante ets violée, on ajoute la contrainte au modèle et on peut augmenter added
         added = separation_connectivity!(model, x, G, V, k; thr=thr)
+        total_added += added
         println("Contraintes ajoutées : ", added)
         if added == 0 || iter >= max_iter
             println("Aucune contrainte supplémentaire nécessaire. Fin.")
@@ -262,11 +231,16 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
     println("==============================")
     println("Statut : ", termination_status(model))
     println("Valeur obj : ", objective_value(model))
+    println("Nombre total de contraintes ajoutées : ", total_added)
     #println("Solution x : ", value.(x))
 end
 
 # Appel :
 run_separation!(model, x, G, collect(V), k)
+
+#pour comparer avec la méthode des composantes
+t1 = @elapsed run_separation!(model, x, G, collect(V), k)
+println("Temps méthode code 3 : ", t1, " secondes")
 
 
 
