@@ -2,93 +2,9 @@
 # BCPk - Balanced Connected Partition (flow-based)
 # Lecture d'instances, partition complète, poids et graphe
 # ======================
-
+include("utils.jl")
 using JuMP, Gurobi
 using Graphs, GraphPlot, Colors
-
-# ----------------------
-# Fonction pour lire les instances de l'article
-# ----------------------
-function readWeightedGraph_paper(file::String)
-    data = readlines(file)
-    
-    # Lecture nombre de sommets et d'arêtes
-    line = split(data[2], " ")
-    n = parse(Int, line[1])
-    m = parse(Int, line[2])
-
-    # Initialisation
-    W = zeros(Int, n)
-    E_list = []
-
-    # Lecture des poids
-    for i in 1:n
-        line = split(data[3 + i], " ")
-        W[i] = parse(Int, line[4])  # 4ème colonne = poids
-    end
-
-    # Lecture des arêtes
-    for i in 1:m
-        line = split(data[4 + n + i], " ")
-        orig = parse(Int, line[1])
-        dest = parse(Int, line[2])
-        push!(E_list, (orig+1, dest+1))  # +1 pour Julia
-    end
-
-    return E_list, W
-end
-
-function createDigraphFromGraph(E_list::Vector{Any}, W::Vector{Int64}, sources::Vector{Int64})
-    n = length(W)
-    k = length(sources)
-    D = DiGraph(n + k)
-    # Add the arcs on both directions
-    for (u,v) in E_list
-        add_edge!(D, u, v)
-        add_edge!(D, v, u)
-    end
-    # Add the k sources (all the sources are linked to all the nodes)
-    for i in sources
-        for v in 1:n
-            add_edge!(D, i, v)
-        end
-    end
-
-    return D
-end 
-
-
-# ----------------------
-# Lire l'instance
-# ----------------------
-file = "G_ex_papier.txt"
-E_list, W = readWeightedGraph_paper(file)
-println("===== Recuperation de l'instance =====")
-println("Instance lue ", file)
-println("Arêtes du graphe (E)        : ", E_list)
-println("Nombre d'arêtes |E|         : ", length(E_list))
-println("Poids des sommets (W)       : ", W)
-println("===============================\n\n")
-
-
-
-# ----------------------
-# Initialiser les variables du problème
-# ----------------------
-Wtot = sum(W)
-n = length(W)
-V = 1:n
-k = 2 
-println("===== Problème initialisé =====")
-println("Nombre de sommets (n)      : ", n)
-println("Nombre de partitions (k)    : ", k)
-println("Sommets (V)                 : ", V)
-println("Poids des sommets (W)       : ", W)
-println("Poids total (Wtot)          : ", Wtot)
-println("===============================\n\n")
-
-
-
 
 # ----------------------
 # Création du modele de flot
@@ -147,47 +63,72 @@ function create_flow_model(E_list, W, Wtot, n, V, k)
         @constraint(model, sum(y[Edge(u,v)] for u in  V_and_sources if Edge(u,v) in A) <= 1)
     end
 
-    return model, D, A, sources, V, V_and_sources
+    return model, A, sources, V, y
 end
 
 
+function solve_flow_model(model, y)
+    # ----------------------
+    # Résolution
+    # ----------------------
+    JuMP.optimize!(model)
+    return model, y
+end
 
-# # ----------------------
-# # Visualisation des variables
-yval = value.(y)
+function display_results(model, y, A, sources, W, k)
+    # Model Solving
+    println("Status = ", JuMP.termination_status(model))
+    println("Valeur optimale = ", JuMP.objective_value(model))
+    println("Temps de résolution (s) = ", JuMP.solve_time(model))
 
-# Forêt dirigée des arcs sélectionnés (y = 1)
-H = DiGraph(n + k)
-for e in A
-    if yval[e] > 0.5
-        add_edge!(H, src(e), dst(e))
+    # # Visualisation des variables
+    yval = value.(y)
+
+    # Forêt dirigée des arcs sélectionnés (y = 1)
+    H = DiGraph(n + k)
+    for e in A
+        if yval[e] > 0.5
+            add_edge!(H, src(e), dst(e))
+        end
     end
-end
 
-# Affectation par simple exploration depuis chaque source
-part = fill(0, n)                
-for (i, s) in enumerate(sources)
-    stack = [s]
-    seen = falses(n + k); seen[s] = true
-    while !isempty(stack)
-        u = pop!(stack)
-        for v in outneighbors(H, u)
-            if !seen[v]
-                seen[v] = true
-                push!(stack, v)
-                v <= n && (part[v] = i)   # affecter si c'est un vrai sommet
+    # Affectation par simple exploration depuis chaque source
+    part = fill(0, n)                
+    for (i, s) in enumerate(sources)
+        stack = [s]
+        seen = falses(n + k); seen[s] = true
+        while !isempty(stack)
+            u = pop!(stack)
+            for v in outneighbors(H, u)
+                if !seen[v]
+                    seen[v] = true
+                    push!(stack, v)
+                    v <= n && (part[v] = i)   # affecter si c'est un vrai sommet
+                end
             end
         end
     end
+
+    # Résumé final des partitions trouvées
+    classes = [findall(v -> part[v] == i, 1:n) for i in 1:k]
+    wp = [sum(W[v] for v in classes[i]) for i in 1:k]
+    minw = minimum(wp)
+
+    println("\n\n===== Résultat final =====")
+    println("Nombres de classes souhaitées : ", k)
+    println("Partitions : ", classes)
+    println("Poids par classe : ", wp, "  -> min = ", minw)
+    println("===========================\n\n")
+end 
+
+function run_flow_model(E_list, W, Wtot, n, V, k)
+    model, A, sources, V, y = create_flow_model(E_list, W, Wtot, n, V, k)
+    model, y = solve_flow_model(model, y)
+    display_results(model, y, A, sources, W, k)
 end
 
-# Résumé final des partitions trouvées
-classes = [findall(v -> part[v] == i, 1:n) for i in 1:k]
-wp = [sum(W[v] for v in classes[i]) for i in 1:k]
-minw = minimum(wp)
 
-println("\n\n===== Résultat final =====")
-println("Nombres de classes souhaitées : ", k)
-println("Partitions : ", classes)
-println("Poids par classe : ", wp, "  -> min = ", minw)
-println("===========================\n\n")
+
+
+
+

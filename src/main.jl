@@ -1,17 +1,20 @@
 using JuMP, Gurobi
+include("model1.jl")
+include("utils.jl")
 
 # ----------------------
 # Choix de l'instance et du modèle
 # ----------------------
 instance = "G_ex_papier.txt"
-model = ""
+model = "flow"
 
 # ----------------------
 # Lire l'instance
 # ----------------------
-E_list, W = readWeightedGraph_paper(instance)
+instance_path = "../instances/" * instance
+E_list, W = readWeightedGraph_paper(instance_path)
 println("===== Recuperation de l'instance =====")
-println("Instance lue ", file)
+println("Instance lue ", instance)
 println("Arêtes du graphe (E)        : ", E_list)
 println("Nombre d'arêtes |E|         : ", length(E_list))
 println("Poids des sommets (W)       : ", W)
@@ -33,18 +36,6 @@ println("Poids des sommets (W)       : ", W)
 println("Poids total (Wtot)          : ", Wtot)
 println("===============================\n\n")
 
-# ----------------------
-# Initialiser le modèle
-# ----------------------
-
-
-println("\n\n MODEL : ", model, "\n\n")
-
-
-# ----------------------
-# Résolution
-# ----------------------
-JuMP.optimize!(model)
-println("Status = ", JuMP.termination_status(model))
-println("Valeur optimale = ", JuMP.objective_value(model))
-
+if model == "flow"
+    run_flow_model(E_list, W, Wtot, n, V, k)
+end

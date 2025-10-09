@@ -1,6 +1,3 @@
-
-
-
 # ----------------------
 # Fonction pour lire les instances de l'article
 # ----------------------
