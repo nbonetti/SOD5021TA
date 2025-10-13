@@ -1,176 +1,287 @@
 using JuMP, Gurobi, Graphs
 import MathOptInterface as MOI
 
-# ----------------------------
-# Fonctions d'aide (inchangées)
-# ----------------------------
-
+# ------------------------------------------------------------------
+# Fonction de lecture du graphe (inchangée)
+# ------------------------------------------------------------------
 function readWeightedGraph_paper(file::String)
-    data = readlines(file)
-    line = split(data[2], " ")
-    n = parse(Int, line[1])
-    m = parse(Int, line[2])
-    W = zeros(Int, n)
-    E_list = []
-    for i in 1:n
-        line = split(data[3 + i], " ")
-        W[i] = parse(Int, line[4])
-    end
-    for i in 1:m
-        line = split(data[4 + n + i], " ")
-        orig = parse(Int, line[1])
-        dest = parse(Int, line[2])
-        push!(E_list, (orig+1, dest+1))
-    end
-    return E_list, W
+    data = readlines(file)
+    line = split(data[2], " ")
+    n = parse(Int, line[1])
+    m = parse(Int, line[2])
+    W = zeros(Int, n)
+    E_list = []
+    for i in 1:n
+        line = split(data[3 + i], " ")
+        W[i] = parse(Int, line[4])
+    end
+    for i in 1:m
+        line = split(data[4 + n + i], " ")
+        orig = parse(Int, line[1])
+        dest = parse(Int, line[2])
+        push!(E_list, (orig + 1, dest + 1))
+    end
+    g = SimpleGraph(n)
+    for (u, v) in E_list
+        add_edge!(g, u, v)
+    end
+    w_dict = Dict(i => W[i] for i in 1:n)
+    return g, w_dict
 end
 
-function boundary_neighbors(G::SimpleGraph, C::Vector{Int})
-    inC = zeros(Bool, nv(G))
-    for v in C
-        inC[v] = true
-    end
-    N = Int[]
-    for v in C
-        for u in neighbors(G, v)
-            if !inC[u]
-                push!(N, u)
-            end
-        end
-    end
-    return unique(N)
+# ------------------------------------------------------------------
+# Procédure de séparation (le cœur du problème)
+# ------------------------------------------------------------------
+
+"""
+    find_violating_cut(G, x_val, i, u, v)
+
+Trouve le (u,v)-séparateur de poids minimum pour la classe i, basé sur les poids fractionnaires x_val.
+Utilise un modèle de flot maximum sur un graphe auxiliaire.
+
+Le graphe auxiliaire est construit en "dédoublant" chaque sommet `w` en `w_in` et `w_out`.
+- Un arc `(w_in -> w_out)` est créé avec une capacité `x_val[w, i]`. C'est la capacité du sommet.
+- Pour chaque arête `{a, b}` dans G, on ajoute deux arcs de capacité infinie :
+  `(a_out -> b_in)` et `(b_out -> a_in)`.
+
+Le flot max de `u_out` à `v_in` dans ce graphe est égal à la coupe nodale minimale.
+"""
+function find_violating_cut(G::SimpleGraph, x_val::Dict, i::Int, u::Int, v::Int)
+    n = nv(G)
+    
+    # Indices pour les sommets dédoublés dans le modèle de flot
+    # w_in -> w, w_out -> n + w
+    source_node = n + u # u_out
+    sink_node = v     # v_in
+
+    flow_model = Model(Gurobi.Optimizer)
+    set_silent(flow_model)
+
+    # Variables de flot f[i, j] pour le flot de i à j
+    @variable(flow_model, f[1:(2n), 1:(2n)] >= 0)
+
+    # 1. Contraintes de capacité des sommets (arcs w_in -> w_out)
+    for w in 1:n
+        @constraint(flow_model, f[w, n + w] <= x_val[w, i])
+    end
+
+    # 2. Contraintes de capacité des arêtes originales (infinie)
+    # C'est une grande valeur, mais suffisante pour ne pas être une contrainte limitante.
+    INF_CAPACITY = sum(w for w in values(x_val)) + 1.0
+    for edge in edges(G)
+        a, b = src(edge), dst(edge)
+        # Arc a_out -> b_in
+        @constraint(flow_model, f[n + a, b] <= INF_CAPACITY)
+        # Arc b_out -> a_in
+        @constraint(flow_model, f[n + b, a] <= INF_CAPACITY)
+    end
+
+    # 3. Conservation du flot pour chaque sommet
+    for w in 1:(2n)
+        if w != source_node && w != sink_node
+            incoming_flow = sum(f[j, w] for j in 1:(2n))
+            outgoing_flow = sum(f[w, j] for j in 1:(2n))
+            @constraint(flow_model, incoming_flow == outgoing_flow)
+        end
+    end
+
+    # 4. Objectif : maximiser le flot sortant de la source
+    @objective(flow_model, Max, sum(f[source_node, j] for j in 1:(2n)))
+    
+    optimize!(flow_model)
+
+    # Si le solveur échoue, on ne fait rien
+    if termination_status(flow_model) != MOI.OPTIMAL
+        return 0.0, Int[]
+    end
+
+    min_cut_value = objective_value(flow_model)
+
+    # 5. Vérification de la violation
+    # La contrainte est violée si x_u,i + x_v,i - 1 > min_cut_value
+    if x_val[u, i] + x_val[v, i] - 1.0 > min_cut_value + 1e-6
+        # --- Extraction du séparateur S ---
+        # On trouve les sommets accessibles depuis la source dans le graphe RÉSIDUEL.
+        f_val = value.(f)
+        
+        # Graphe résiduel implicite
+        q = [source_node] # File pour le parcours en largeur (BFS)
+        reachable = falses(2n)
+        reachable[source_node] = true
+        
+        head = 1
+        while head <= length(q)
+            curr = q[head]
+            head += 1
+            
+            for next_node in 1:(2n)
+                if !reachable[next_node]
+                    # Si un flot peut encore passer de curr à next_node
+                    # Arc avant : flot < capacité
+                    if curr <= n # arc in -> out
+                        cap = x_val[curr, i]
+                    else # arc out -> in
+                        cap = INF_CAPACITY
+                    end
+                    if f_val[curr, next_node] < cap - 1e-6
+                        reachable[next_node] = true
+                        push!(q, next_node)
+                    end
+                    
+                    # Arc arrière : flot > 0
+                    if f_val[next_node, curr] > 1e-6
+                        reachable[next_node] = true
+                        push!(q, next_node)
+                    end
+                end
+            end
+        end
+        
+        # Le séparateur S est l'ensemble des sommets `w` du graphe original
+        # tels que `w_in` est atteignable mais `w_out` ne l'est pas.
+        separator_S = Int[]
+        for w in 1:n
+            if reachable[w] && !reachable[n + w]
+                push!(separator_S, w)
+            end
+        end
+        return min_cut_value, separator_S
+    end
+    
+    # Pas de violation trouvée
+    return min_cut_value, Int[]
 end
-# ----------------------------
-# Compteur global pour les contraintes ajoutées
-# Nous utilisons un Ref pour que le compteur soit mutable
-# ----------------------------
-const num_cuts_added = Ref(0)
-# =========================================================
-# Procédure de séparation avec CALLBACK pour Branch-and-Cut
-# =========================================================
-function component_separation_callback(cb_data, x, G, V, k; thr::Float64=0.01)
-    added_cuts = 0
-    
-    try
-        x_val = Dict((v, i) => JuMP.callback_value(cb_data, x[v, i]) for v in V, i in 1:k)
-        
-        for i in 1:k
-            S_i = [v for v in V if x_val[v,i] > thr]
 
-            if length(S_i) <= 1
-                continue
-            end
 
-            G_i, _ = induced_subgraph(G, S_i)
-            comps = connected_components(G_i) 
+"""
+Callback de séparation pour les contraintes de connexité.
+"""
+function separation_callback(cb_data, x, G, k)
+    n = nv(G)
+    V = 1:n
+    
+    # On ne lance la séparation que sur les solutions fractionnaires aux noeuds du B&C
+    # cb_where == MOI.CALLBACK_NODE_STATUS_FRACTIONAL est une bonne pratique
+    # mais Gurobi gère bien avec LazyConstraints.
+    
+    x_val = Dict((v, i) => callback_value(cb_data, x[v, i]) for v in V, i in 1:k)
 
-            if length(comps) > 1
-                println("Classe $i : ", length(comps), " composantes détectées.")
-                for j in 2:length(comps)
-                    component = comps[j]
-                    C = [S_i[v] for v in component]
-                    N_C = boundary_neighbors(G, C)
-
-                    lhs = sum(x[v,i] for v in C) - sum(x[z,i] for z in N_C)
-                    rhs = length(C) - 1
-                    
-                    MOI.submit(model, MOI.UserCut(cb_data), 
-                        JuMP.build_constraint(model, lhs <= rhs))
-                    
-                    added_cuts += 1
-                end
-            end
-        end
-    catch
-        return 0
-    end
-    num_cuts_added[] += added_cuts
-    return added_cuts
+    for i in 1:k
+        for u in V
+            for v in (u+1):n
+                # On ne teste que les paires non-adjacentes
+                if !has_edge(G, u, v)
+                    # Heuristique pour ne pas lancer le min-cut pour rien
+                    if x_val[u, i] + x_val[v, i] > 1.0 + 1e-6
+                        
+                        min_cut_val, S = find_violating_cut(G, x_val, i, u, v)
+                        
+                        # Si S n'est pas vide, une contrainte violée a été trouvée
+                        if !isempty(S)
+                            #println("VIOLATION TROUVÉE: classe $i, paire ($u, $v)")
+                            #println("  x_u + x_v - 1 = $(x_val[u,i] + x_val[v,i] - 1.0)")
+                            #println("  min_cut_value = $min_cut_val, S = $S")
+                            
+                            # Ajout de la contrainte (lazy cut)
+                            cut = @build_constraint(x[u,i] + x[v,i] - sum(x[z,i] for z in S) <= 1)
+                            MOI.submit(JuMP.backend(owner_model(x)), MOI.LazyConstraint(cb_data), cut)
+                            # On peut retourner après avoir ajouté une ou plusieurs coupes
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
-# ----------------------------
+
+# ------------------------------------------------------------------
 # Programme principal
-# ----------------------------
-file = "gg_210_210_a_1.in"
-E, W_vect = readWeightedGraph_paper(file)
-n = length(W_vect)
-V = 1:n
-k = 2
-w = Dict(i => W_vect[i] for i in V)
-G = SimpleGraph(n)
-for (u, v) in E
-    add_edge!(G, u, v)
+# ------------------------------------------------------------------
+function solve_bcp_section2(instance_file::String, k::Int)
+    G, w = readWeightedGraph_paper(instance_file)
+    n = nv(G)
+    V = 1:n
+    
+    println("==============================")
+    println("Instance: $instance_file, k=$k")
+    println("Graphe créé avec $n sommets et $(ne(G)) arêtes.")
+    println("==============================")
+    
+    model = Model(Gurobi.Optimizer)
+    
+    @variable(model, x[v in V, i in 1:k], Bin)
+    @variable(model, W_min) # Poids de la classe la plus légère
+
+    # L'objectif est de maximiser le poids de la partition de poids minimum
+    @objective(model, Max, W_min)
+    
+    # Contrainte de définition de W_min
+    for i in 1:k
+        @constraint(model, W_min <= sum(w[v] * x[v, i] for v in V))
+    end
+    
+    # Contrainte de partition : chaque sommet est dans au plus une classe
+    # (permet les k-subpartitions, comme suggéré dans l'article)
+    for v in V
+        @constraint(model, sum(x[v, i] for i in 1:k) <= 1)
+    end
+    
+    # --- Symétrie ---
+    # Pour casser la symétrie, on peut ordonner les poids des classes
+    # C'est l'inégalité (1) de l'article, mais elle est optionnelle si on maximise W_min
+    # for i in 1:k-1
+    #     @constraint(model, sum(w[v]*x[v,i] for v in V) <= sum(w[v]*x[v,i+1] for v in V))
+    # end
+    
+    println("Modèle initial créé. Lancement du Branch-and-Cut...")
+
+    set_time_limit_sec(model,100)
+    # Activer les contraintes "lazy"
+    set_attribute(model, "LazyConstraints", 1)
+    
+    # Définir la fonction de callback
+    set_attribute(model, MOI.LazyConstraintCallback(), cb_data -> separation_callback(cb_data, x, G, k))
+
+    start_time = time()
+    optimize!(model)
+    end_time = time()
+
+    println("==============================")
+    println("Résultat Final (Formulation Section 2)")
+    println("==============================")
+    
+    status = termination_status(model)
+    println("Statut : ", status)
+
+    if status == MOI.OPTIMAL
+        println("SOLUTION OPTIMALE TROUVÉE.")
+    elseif status == MOI.TIME_LIMIT
+        println("LIMITE DE TEMPS ATTEINTE.")
+    else
+        println("Le solveur s'est arrêté pour une autre raison.")
+    end
+
+    if has_values(model)
+        println("Meilleure solution trouvée (poids min) : ", objective_value(model))
+        println("Meilleure borne duale : ", objective_bound(model))
+        gap = relative_gap(model)
+        println("Gap d'optimalité relatif : ", round(100*gap, digits=2), "%")
+        
+        println("\nDétail de la meilleure partition trouvée :")
+        for i in 1:k
+            partition_i = [v for v in V if value(x[v,i]) > 0.5]
+            weight_i = sum(w[v] for v in partition_i)
+            println("Classe $i (poids $weight_i): $partition_i")
+        end
+    else
+        println("Aucune solution réalisable n'a été trouvée.")
+    end
+    
+    println("\nTemps total d'exécution : ", round(end_time - start_time, digits=2), "s")
+    println("Nombre de nœuds B&C explorés : ", node_count(model))
 end
-println("==============================")
-println("Création du graphe à partir de l'instance")
-println("==============================")
-println("Graphe créé avec ", nv(G), " sommets et ", ne(G), " arêtes.")
 
-
-# ----------------------------
-# Formulation du modèle Ck(G,w)
-# ----------------------------
-
-model = Model(Gurobi.Optimizer)
-@variable(model, x[v in V, i in 1:k], Bin)
-
-# (1) Ordre des poids
-for i in 1:k-1
-    @constraint(model, sum(w[v]*x[v,i] for v in V) <= sum(w[v]*x[v,i+1] for v in V))
-end
-
-# (2) Un sommet au plus dans une classe
-for v in V
-    @constraint(model, sum(x[v,i] for i in 1:k) <= 1)
-end
-
-# Objectif
-@objective(model, Max, sum(w[v]*x[v,1] for v in V))
-
-println("==============================")
-println("Formulation du modèle terminée")
-println("==============================")
-println("Nombre de variables : ", num_variables(model))
-println("Objectif : ", objective_function(model))
-
-# ----------------------------
-# Optimisation en Branch-and-Cut
-# ----------------------------
-
-println("==============================")
-println("Début de l'optimisation Branch-and-Cut")
-println("==============================")
-
-# 1. Configuration et enregistrement du callback
-JuMP.set_optimizer_attribute(model, "OutputFlag", 1)
-JuMP.set_optimizer_attribute(model, "LazyConstraints", 1) 
-
-# --- CORRECTION DE LA SIGNATURE DU CALLBACK ---
-# La fonction anonyme doit accepter deux arguments : cb_data et l'emplacement (cb_where)
-# Le deuxième argument est ignoré dans notre appel à `component_separation_callback`
-JuMP.set_optimizer_attribute(model, Gurobi.CallbackFunction(), (cb_data, cb_where) -> 
-    component_separation_callback(cb_data, x, G, V, k; thr=0.01)
-)
-# ----------------------------------------------
-
-# 2. Lancement de l'optimisation. Le solveur gère tout le processus B&C.
-t1 = @elapsed optimize!(model)
-
-# ----------------------------
-# Affichage des résultats pour le rapport
-# ----------------------------
-println("==============================")
-println("Résultat final Branch-and-Cut")
-println("==============================")
-println("Statut : ", termination_status(model))
-
-if termination_status(model) == MOI.OPTIMAL
-    println("Valeur objective : ", objective_value(model))
-    println("Borne supérieure (Racine) : ", JuMP.objective_bound(model))
-    println("Nombre de nœuds B&C : ", JuMP.node_count(model))
-    println("Nombre d'itérations Simplex : ", JuMP.simplex_iterations(model))
-    println("Nombre de contraintes de connectivité ajoutées : ", num_cuts_added[])
-    println("Temps d'exécution (s) : ", t1)
-else
-    println("Le solveur n'a pas trouvé de solution optimale.")
-end
+file ="gg_05_05_a_1.in"
+k=2
+solve_bcp_section2(file, k)
