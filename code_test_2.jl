@@ -284,8 +284,6 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
 end
 
 # Appel :
-# ...
-# Appel :
 run_separation!(model, x, G, collect(V), k) # <- Premier appel inutile
 t1 = @elapsed run_separation!(model, x, G, collect(V), k) # <- Mesure le temps du second appel
 println("Temps méthode code 2 : ", t1, " secondes")
