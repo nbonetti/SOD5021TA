@@ -35,7 +35,9 @@ end
 
 ## test de cette focntion avec un simple graphe 
 #file = "G_ex_papier.txt"
-file = "gg_05_05_a_1.in"
+#file = "gg_05_05_a_1.in"
+file = "gg_10_10_a_1.in"
+
 E, W_vect = readWeightedGraph_paper(file)
 n = length(W_vect)
 V = 1:n
@@ -128,7 +130,7 @@ function separation_on_components!(model::Model, x, G::SimpleGraph, V::Vector{In
     # créer le set des arêtes existantes
     # on peut convertir les arêtes en tuples (min, max) pour éviter les doublons
     # exemple si (u,v) appartient à Eset alors ils sont connectés, sinon ce n'est pas le cas
-    Eset = Set( (min(e.src,e.dst), max(e.src,e.dst)) for e in edges(G) )
+    #Eset = Set( (min(e.src,e.dst), max(e.src,e.dst)) for e in edges(G) )
 
     #ici on boucle sur les classes 
     for i in 1:k
@@ -144,43 +146,32 @@ function separation_on_components!(model::Model, x, G::SimpleGraph, V::Vector{In
         G_i, _ = induced_subgraph(G, S_i)
         comps = connected_components(G_i) #on prend les composantes de ces sous graphes 
 
-        # dictionnaire sommet -> composante
-        # on essaie de vérifier si deux sommets sont dans la meme composante
-        comp_id = Dict{Int,Int}()
-        for (cid, comp) in enumerate(comps)
-            for v in comp
-                comp_id[S_i[v]] = cid
-            end
-        end
+        if length(comps)>1
+            println("Classe $i : ", length(comps), " composantes détectées.")
+            for j in 2:length(comps)
+                component=comps[j]
+                C= [S_i[v] for v in component] # on récupère les sommets de la composante j
 
-        # pour chaque paire non adjacente dans la même classe mais non connectée
-        for u in V, v in V
-            # On considère toutes les paires de sommets non adjacente
-            if u < v && !( (min(u,v), max(u,v)) in Eset )
-                # pour le sommets actifs de la classe i
-                if x_val[u,i] > thr && x_val[v,i] > thr
-                    # si u et v sont dans des composantes diff alors la contrainte est violée
-                    if get(comp_id, u, 0) != get(comp_id, v, 0)
-                        #ici on prend tous sles voisins de u et v pour faire le cut based
-                        Nuv = union(neighbors(G,u), neighbors(G,v))
-                        if !isempty(Nuv)
-                            @constraint(model, x[u,i] + x[v,i] - sum(x[z,i] for z in Nuv) <= 1)
-                            added += 1  #on a ajouté la contrainte donc on incrémente le compteur
-                            println("Ajout contrainte pour u=$u, v=$v, classe=$i")
-                        end
-                    end
-                end
+                N_C = boundary_neighbors(G, C) # on calcule les voisins de cette composante
+                @constraint(model, sum(x[v,i] for v in C) <= sum(x[z,i] for z in N_C) + length(C)-1)
+                added += 1  #on a ajouté la contrainte donc on incrémente le compteur
+                println("Ajout contrainte composante pour classe $i, composante $j avec sommets ", C, " et voisins ", N_C)
+
             end
         end
     end
     return added
 end
 
+
+
+
 # ----------------------------
 # Programme principal
 # ----------------------------
 #file = "G_ex_papier.txt"
-file = "gg_05_05_a_1.in"
+#file = "gg_05_05_a_1.in"
+file = "gg_10_10_a_1.in"
 E, W_vect = readWeightedGraph_paper(file)
 n = length(W_vect)
 V = 1:n
@@ -273,10 +264,14 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
             println("Aucune contrainte supplémentaire nécessaire. Fin.")
             break
         end
-        # on realnce le modèle avec toutes les contraintes en plus
+        # on relance le modèle avec toutes les contraintes en plus
         optimize!(model)
     end
-    optimize!(model)
+    if termination_status(model) != OPTIMAL
+        optimize!(model)
+    end
+
+    
     println("==============================")
     println("==============================")
     println("Résultat final")
@@ -289,10 +284,11 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
 end
 
 # Appel :
-run_separation!(model, x, G, collect(V), k)
-t1 = @elapsed run_separation!(model, x, G, collect(V), k)
+# ...
+# Appel :
+run_separation!(model, x, G, collect(V), k) # <- Premier appel inutile
+t1 = @elapsed run_separation!(model, x, G, collect(V), k) # <- Mesure le temps du second appel
 println("Temps méthode code 2 : ", t1, " secondes")
-
 
 
 
