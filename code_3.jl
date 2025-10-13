@@ -33,103 +33,126 @@ function readWeightedGraph_paper(file::String)
     return E_list, W
 end
 
-# ----------------------------
-# Lecture de l'instance
-# ----------------------------
-## test de cette focntion avec un simple graphe 
-#file = "G_ex_papier.txt"
-#file = "gg_05_05_a_1.in"
-file = "gg_10_10_a_1.in"
-E, W_vect = readWeightedGraph_paper(file)
-n = length(W_vect)
-V = 1:n
-k = 2
-
-w = Dict(i => W_vect[i] for i in V)
-println("==============================")
-println("==============================")
-println("TEST de la fonction readWeightedGraph_paper")
-println("==============================")
-println("==============================")
-
-
-println("==============================")
-println("==============================")
-println("Lecture de l'instance depuis le fichier  : ", file)
-println("==============================")
-println("==============================")
-println("Arêtes : ", E)
-println("Nombre d'arêtes : ", length(E))
-println("Poids des arêtes : ", W_vect)
-
-println("Nombre de sommets : ", n)
-println("Poids des sommets : ", w)
-println("Poids total : ", sum(values(w)))
-
-
-
-G = SimpleGraph(n)
-for (u, v) in E
-    add_edge!(G, u, v)
-end
-println("==============================")
-println("==============================")
-println("Création du graphe à partir de l'instance")
-println("==============================")
-println("==============================")
-println("Graphe créé avec ", nv(G), " sommets et ", ne(G), " arêtes.")
-println("Liste des arêtes du graphe : ", edges(G))
 
 # ----------------------------
-# amélioration du modèle question 2 avec connectivity inequalities 
-# ----------------------------
+# amélioration du modèle question 2 avec crossing inequalities de la section 3.2 de l'article
+# ctet methode est censée améliorer la borne inferieure
+# on va s'intéresr aux inégalites numérotées (6) de l'article 
+#si un ensemble de sommets S est presque entièrement dans une classe i ( sum sur v x[v,i] est élevée) et dans ce cas S ne peut pas etre entierement affectée à i ou j sans que leur frontière ne soit affectée 
 
-
-# ----------------------------
-#on utilise plus la fonction boundary_neighbors car on calclule les voisins directement avec union(neighbors(G, u), neighbors(G, v))
-# ----------------------------
 
 
 function separation_connectivity!(model::Model, x, G::SimpleGraph, V::Vector{Int}, k::Int; thr=0.5)
     added = 0
     x_val = value.(x)
+    # La séparation complète nécessite de trouver toutes les faces du graphe planaire.
+    # Pour cet exemple, nous allons simplifier en utilisant un cycle arbitraire
+    # comme ensemble de sommets F pour illustrer la logique de l'article.
 
-    # Créer un set pour les arêtes existantes
-    Eset = Set( (min(e.src,e.dst), max(e.src,e.dst)) for e in edges(G) )
+    # ---------------------------------------------------------------------
+    # SIMPLIFICATION pour l'implémentation 
+    # ---------------------------------------------------------------------
+    # Nous allons prendre tous les sommets comme un "cycle de face" fictif pour l'exemple.
+    # Idéalement, F_vertices devrait être le contour d'une face valide.
+    F_vertices = collect(V)
+    f = length(F_vertices) # Taille de la face |F|
+    if f < 4
+        return 0 # Nécessite au moins 4 sommets
+    end
 
+    # ---------------------------------------------------------------------
+    #dans l'article, on nous détaille les matrices L et R, on va donc les construire ici
+    # L[j, i] = max {x_val[F(j'), i]} pour j' <= j
+    # R[j, i] = max {x_val[F(j'), i]} pour j' >= j
+    
+    L = zeros(f, k) # Matrice L : L[j, i]
+    R = zeros(f, k) # Matrice R : R[j, i]
+
+    #pour la matrice L 
     for i in 1:k
-        # Sommets actifs dans la classe i
-        S_i = [v for v in V if x_val[v,i] > thr]
-        if length(S_i) <= 1
-            continue
-        end
-
-        # Vérifier toutes les paires non adjacentes dans la classe i
-        for u in S_i, v in S_i
-            if u < v && !((min(u,v), max(u,v)) in Eset)
-                # Construire le digraphe Di pour la min-cut
-                # Ici on fait une approche simplifiée : on prend voisins communs
-                # on en calcule plus les composantes mauis on boucle directement sur toutes les paires de sommets non adjacents dans S_i
-                Nuv = union(neighbors(G, u), neighbors(G, v))
-                if !isempty(Nuv)
-                    # Contrainte de type connectivity lifted
-                    @constraint(model, x[u,i] + x[v,i] - sum(x[z,i] for z in Nuv) <= 1)
-                    added += 1
-                    println("Ajout contrainte connectivity liftée pour u=$u, v=$v, classe=$i")
-                end
-            end
+        max_val = -Inf
+        for j in 1:f
+            max_val = max(max_val, x_val[F_vertices[j], i])
+            L[j, i] = max_val
         end
     end
 
+    #pour la matrice R 
+    for i in 1:k
+        max_val = -Inf
+        for j in f:-1:1
+            max_val = max(max_val, x_val[F_vertices[j], i])
+            R[j, i] = max_val
+        end
+    end
+
+    #construction de la matrice M est plus compliquée : 
+    # pour tous les j apparetnant ) F privé de 1, et pour tout i1 et i2 on a :
+    # si j=2 --> M(j,i1,i2)= xtilde[F(1),i1] + xtilde[F(3),i2]
+    #sinon max(M(j-1,i1,i2), L(j-1,i1)+xtilde[F(j),i2]
+    #notre matrice M est donc en 3 dimensions
+
+    M = Dict{Tuple{Int, Int, Int}, Float64}() 
+    
+    for i1 in 1:k, i2 in 1:k
+        if i1 == i2
+            continue
+        end
+
+        # Initialisation pour j=2
+        v1 = F_vertices[1]
+        v2 = F_vertices[2]
+        M[2, i1, i2] = x_val[v1, i1] + x_val[v2, i2]
+        
+        # Calcul par récurrence pour j = 3 à f
+        for j in 3:f
+            # Cas M(j-1, i1, i2)
+            prev_M = M[j - 1, i1, i2]
+
+            # Cas L(j-1, i1) + x_val[F(j), i2]
+            v_j = F_vertices[j]
+            new_val = L[j - 1, i1] + x_val[v_j, i2]
+            
+            M[j, i1, i2] = max(prev_M, new_val)
+        end
+    end
+
+    # puis avec tout cela on peut verifier la violation 
+    #on check si M(j-1,i1,i2) + xtilde[F(j),i1] + R(j+1,i2) > 3
+    # Le sommet F(j) joue le rôle de t1 dans l'inégalité de croisement xs1 + xs2 + xt1 + xt2 <= 3.
     return added
 end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # ----------------------------
 # Programme principal
 # ----------------------------
-#file = "G_ex_papier.txt"
+file = "G_ex_papier.txt"
 #file = "gg_05_05_a_1.in"
-file = "gg_10_10_a_1.in"
+#file = "gg_10_10_a_1.in"
 E, W_vect = readWeightedGraph_paper(file)
 n = length(W_vect)
 V = 1:n
@@ -222,10 +245,12 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
             println("Aucune contrainte supplémentaire nécessaire. Fin.")
             break
         end
-        # on realnce le modèle avec toutes les contraintes en plus
+        # on relance le modèle avec toutes les contraintes en plus
         optimize!(model)
     end
-    optimize!(model)
+    if termination_status(model) != OPTIMAL
+        optimize!(model)
+    end
     println("==============================")
     println("==============================")
     println("Résultat final")
@@ -237,15 +262,11 @@ function run_separation!(model, x, G, V, k; max_iter=70, thr=0.5)
     #println("Solution x : ", value.(x))
 end
 
-# Appel :
-run_separation!(model, x, G, collect(V), k)
 
-#pour comparer avec la méthode des composantes
-t1 = @elapsed run_separation!(model, x, G, collect(V), k)
+
+run_separation!(model, x, G, collect(V), k) # <- Premier appel inutile
+t1 = @elapsed run_separation!(model, x, G, collect(V), k) # <- Mesure le temps du second appel
 println("Temps méthode code 3 : ", t1, " secondes")
-
-
-
 
 
 
