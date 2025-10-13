@@ -37,8 +37,8 @@ end
 # Lecture de l'instance
 # ----------------------------
 ## test de cette focntion avec un simple graphe 
-file = "G_ex_papier.txt"
-#file = "gg_05_05_a_1.in"
+#file = "G_ex_papier.txt"
+file = "gg_05_05_b_1.in"
 E, W_vect = readWeightedGraph_paper(file)
 n = length(W_vect)
 V = 1:n
@@ -126,8 +126,8 @@ end
 # ----------------------------
 # Programme principal
 # ----------------------------
-file = "G_ex_papier.txt"
-#file = "gg_05_05_a_1.in"
+#file = "G_ex_papier.txt"
+file = "gg_05_05_b_1.in"
 E, W_vect = readWeightedGraph_paper(file)
 n = length(W_vect)
 V = 1:n
