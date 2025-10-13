@@ -40,11 +40,15 @@ function boundary_neighbors(G::SimpleGraph, C::Vector{Int})
     end
     return unique(N)
 end
-
+# ----------------------------
+# Compteur global pour les contraintes ajoutées
+# Nous utilisons un Ref pour que le compteur soit mutable
+# ----------------------------
+const num_cuts_added = Ref(0)
 # =========================================================
 # Procédure de séparation avec CALLBACK pour Branch-and-Cut
 # =========================================================
-function component_separation_callback(cb_data, x, G, V, k; thr::Float64=0.5)
+function component_separation_callback(cb_data, x, G, V, k; thr::Float64=0.7)
     added_cuts = 0
     
     try
@@ -80,6 +84,7 @@ function component_separation_callback(cb_data, x, G, V, k; thr::Float64=0.5)
     catch
         return 0
     end
+    num_cuts_added[] += added_cuts
     return added_cuts
 end
 
@@ -151,10 +156,21 @@ JuMP.set_optimizer_attribute(model, Gurobi.CallbackFunction(), (cb_data, cb_wher
 # 2. Lancement de l'optimisation. Le solveur gère tout le processus B&C.
 t1 = @elapsed optimize!(model)
 
-# 3. Affichage des résultats
+# ----------------------------
+# Affichage des résultats pour le rapport
+# ----------------------------
 println("==============================")
 println("Résultat final Branch-and-Cut")
 println("==============================")
 println("Statut : ", termination_status(model))
-println("Valeur obj : ", objective_value(model))
-println("Temps Branch-and-Cut : ", t1, " secondes")
+
+if termination_status(model) == MOI.OPTIMAL
+    println("Valeur objective : ", objective_value(model))
+    println("Borne supérieure (Racine) : ", JuMP.objective_bound(model))
+    println("Nombre de nœuds B&C : ", JuMP.node_count(model))
+    println("Nombre d'itérations Simplex : ", JuMP.simplex_iterations(model))
+    println("Nombre de contraintes de connectivité ajoutées : ", num_cuts_added[])
+    println("Temps d'exécution (s) : ", t1)
+else
+    println("Le solveur n'a pas trouvé de solution optimale.")
+end
