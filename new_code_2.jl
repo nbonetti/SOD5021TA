@@ -48,7 +48,7 @@ const num_cuts_added = Ref(0)
 # =========================================================
 # Procédure de séparation avec CALLBACK pour Branch-and-Cut
 # =========================================================
-function component_separation_callback(cb_data, x, G, V, k; thr::Float64=0.7)
+function component_separation_callback(cb_data, x, G, V, k; thr::Float64=0.01)
     added_cuts = 0
     
     try
@@ -91,7 +91,7 @@ end
 # ----------------------------
 # Programme principal
 # ----------------------------
-file = "gg_10_10_a_1.in"
+file = "gg_210_210_a_1.in"
 E, W_vect = readWeightedGraph_paper(file)
 n = length(W_vect)
 V = 1:n
@@ -149,7 +149,7 @@ JuMP.set_optimizer_attribute(model, "LazyConstraints", 1)
 # La fonction anonyme doit accepter deux arguments : cb_data et l'emplacement (cb_where)
 # Le deuxième argument est ignoré dans notre appel à `component_separation_callback`
 JuMP.set_optimizer_attribute(model, Gurobi.CallbackFunction(), (cb_data, cb_where) -> 
-    component_separation_callback(cb_data, x, G, V, k; thr=0.5)
+    component_separation_callback(cb_data, x, G, V, k; thr=0.01)
 )
 # ----------------------------------------------
 
