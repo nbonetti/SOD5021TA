@@ -282,6 +282,6 @@ function solve_bcp_section2(instance_file::String, k::Int)
     println("Nombre de nœuds B&C explorés : ", node_count(model))
 end
 
-file ="gg_05_05_a_1.in"
+file ="G_ex_papier.txt"
 k=2
 solve_bcp_section2(file, k)
