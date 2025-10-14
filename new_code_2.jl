@@ -210,6 +210,8 @@ function solve_bcp_section2(instance_file::String, k::Int)
     
     model = Model(Gurobi.Optimizer)
     
+    set_optimizer_attribute(model, "TimeLimit", 100)
+    
     @variable(model, x[v in V, i in 1:k], Bin)
     @variable(model, W_min) # Poids de la classe la plus légère
 
@@ -236,7 +238,7 @@ function solve_bcp_section2(instance_file::String, k::Int)
     
     println("Modèle initial créé. Lancement du Branch-and-Cut...")
 
-    set_time_limit_sec(model,100)
+    
     # Activer les contraintes "lazy"
     set_attribute(model, "LazyConstraints", 1)
     
@@ -282,6 +284,6 @@ function solve_bcp_section2(instance_file::String, k::Int)
     println("Nombre de nœuds B&C explorés : ", node_count(model))
 end
 
-file ="G_ex_papier.txt"
+file ="gg_05_05_a_1.in"
 k=2
 solve_bcp_section2(file, k)
