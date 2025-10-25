@@ -29,15 +29,38 @@ function readWeightedGraph_paper(file::String)
     return g, w_dict
 end
 
-# ------------------------------------------------------------------
+# ----------------------------------------------------------------
 # Procédure de séparation (le cœur du problème)
-# on veut résoudre par un algorithme de branch and cut la formulation de la section 2
-#pour ce faire on va former plusieurs fonctions : 
-# - find_violating_cut : qui va chercher une contrainte violée dans une solution fractionnaire
-# - separation_callback : qui va appeler find_violating_cut pour chaque paire de sommets non adjacents
-# - add_cut_constraints : qui va ajouter les contraintes de coupe au modèle
-#- solve_bcp_section2 : qui va créer le modèle, définir les variables, l'objectif, les contraintes de base et lancer le B&C
-# ------------------------------------------------------------------
+#-----------------------------------------------------------------
+#-----------------------------------------------------------------
+# On veut résoudre par un algorithme de branch and cut la formulation
+# de la section 2.
+
+# Pour ce faire on va former plusieurs fonctions : 
+# - find_violating_cut : qui va chercher une contrainte violée dans 
+#une solution fractionnaire.
+
+# - separation_callback : qui va appeler find_violating_cut pour 
+#chaque paire de sommets non adjacents.
+
+# - add_cut_constraints : qui va ajouter les contraintes de coupe au 
+#modèle.
+
+#- solve_bcp_section2 : qui va créer le modèle, définir les variables,
+# l'objectif, les contraintes de base et lancer le B&C.
+# -----------------------------------------------------------------
+
+
+
+
+
+
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+#          Fonction find_violating_cut
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
 
 """
     find_violating_cut(G, x_val, i, u, v)
@@ -57,15 +80,16 @@ Le flot max de `u_out` à `v_in` dans ce graphe est égal à la coupe nodale min
 function find_violating_cut(G::SimpleGraph, x_val::Dict, i::Int, u::Int, v::Int)
     n = nv(G)
     
+    # Construction du graphe dédoublé pour la réduction du problème de coupe nodale (u-v)
     # Indices pour les sommets dédoublés dans le modèle de coupe min
     # w_in -> w, w_out -> n + w
     source_node = n + u # la source est u_out
-    sink_node = v     #  le puits est v_in
+    sink_node = v     #  le puits est v_in (destination)
 
     flow_model = Model(Gurobi.Optimizer)
-    set_silent(flow_model)
+    set_silent(flow_model) 
 
-    # Variables de flot f[i, j] pour le flot de i à j
+    # Variables de flot f[i, j] pour le flot de i à j dans le graphe 2n
     @variable(flow_model, f[1:(2n), 1:(2n)] >= 0)
 
     # 1. Contraintes de capacité des sommets (arcs w_in -> w_out)
@@ -86,7 +110,7 @@ function find_violating_cut(G::SimpleGraph, x_val::Dict, i::Int, u::Int, v::Int)
         @constraint(flow_model, f[n + b, a] <= INF_CAPACITY)
     end
 
-    # 3. Conservation du flot pour chaque sommet
+    # 3. Conservation du flot pour tous les noeuds intermédiaires
     # Le flot entrant doit être égal au flot sortant pour tous les nœuds intermédiaires.
     for w in 1:(2n)
         if w != source_node && w != sink_node
@@ -106,25 +130,34 @@ function find_violating_cut(G::SimpleGraph, x_val::Dict, i::Int, u::Int, v::Int)
         return 0.0, Int[]
     end
 
+
+    # Valeur de la coupe minimale (flot maximum)
     min_cut_value = objective_value(flow_model)
+
+
 
     # 5. Vérification de la violation
     # La contrainte est violée si x_u,i + x_v,i - 1 > min_cut_value
     # Si cette condition est vraie, la coupe S trouvée est une contrainte violée (lazy cut)
     if x_val[u, i] + x_val[v, i] - 1.0 > min_cut_value + 1e-6
+
+
         # --- Extraction du séparateur S ---
-        # Le séparateur S est obtenu en trouvant tous les sommets w du graphe original
-        # tels que w_in est atteignable depuis la source dans le graphe résiduel
-        # mais w_out ne l'est pas. C'est l'ensemble des sommets dont les arcs (w_in -> w_out)
-        # sont saturés par le flot maximum.
+        # Le séparateur S est obtenu en trouvant la coupe (A,B) minimale 
+        # A est l'ensemble des sommets atteignables depuis la source dans le graphe résiduel.
+        # B est l'ensemble des sommets non atteignables depuis la source dans le graphe résiduel.
         # On trouve les sommets accessibles depuis la source dans le graphe RÉSIDUEL.
         f_val = value.(f)
         
         # Graphe résiduel implicite
-        q = [source_node] # File pour le parcours en largeur (BFS)
+        # trouver les sommets atteignables depuis la source
+        q = [source_node] 
         reachable = falses(2n)
         reachable[source_node] = true
         
+
+        #code de parcours en largeur pour trouver les noeuds atteignables dans le graphe résiduel
+        #l'arc est résiduel si son flot est < sa capacité (arc avant) ou si son flot est > 0 (arc arrière)
         head = 1
         while head <= length(q)
             curr = q[head]
@@ -153,10 +186,13 @@ function find_violating_cut(G::SimpleGraph, x_val::Dict, i::Int, u::Int, v::Int)
             end
         end
         
+
+
         # Le séparateur S est l'ensemble des sommets `w` du graphe original
         # tels que `w_in` est atteignable mais `w_out` ne l'est pas.
         separator_S = Int[]
         for w in 1:n
+            # w_in est indexé par w, w_out est indexé par n + w
             if reachable[w] && !reachable[n + w]
                 push!(separator_S, w)
             end
@@ -169,6 +205,15 @@ function find_violating_cut(G::SimpleGraph, x_val::Dict, i::Int, u::Int, v::Int)
 end
 
 
+
+
+
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+#          Fonction separation_callback
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+
 """
 Callback de séparation pour les contraintes de connexité.
 
@@ -180,9 +225,7 @@ function separation_callback(cb_data, x, G, k)
     n = nv(G)
     V = 1:n
     
-    # On ne lance la séparation que sur les solutions fractionnaires aux noeuds du B&C
-    # mais Gurobi gère bien avec LazyConstraints.
-    
+    # Récupération des valeurs des variables x[v, i] pour la solution courante.
     x_val = Dict((v, i) => callback_value(cb_data, x[v, i]) for v in V, i in 1:k)
 
     #Itération sur toutes les paires non-adjacentes {u, v} pour chaque classe i :
@@ -220,38 +263,57 @@ function separation_callback(cb_data, x, G, k)
 end
 
 
+
+
+
+
+# ------------------------------------------------------------------
 # ------------------------------------------------------------------
 # Programme principal
 # ------------------------------------------------------------------
+# ------------------------------------------------------------------    
+
+
+
 """
     solve_bcp_section2(instance_file::String, k::Int)
-    Cette fonction va construire le problème maitre décrit dans la solve_bcp_section2
+
+    Construit le Programme Linéaire en Nombres Entiers (PLNE) de la
+    Section 2 sans les contraintes de connexité (problème maître), et lance le 
+    Branch-and-Cut avec la procédure de séparation.
 """
 function solve_bcp_section2(instance_file::String, k::Int)
     G, w = readWeightedGraph_paper(instance_file)
     n = nv(G)
     V = 1:n
     
+
+    # Affichage des informations de l'instance
     println("==============================")
     println("Instance: $instance_file, k=$k")
     println("Graphe créé avec $n sommets et $(ne(G)) arêtes.")
     println("==============================")
     
+
+    #initialisation du modèle
     model = Model(Gurobi.Optimizer)
     
     
+    #1. Définition des variables
     @variable(model, x[v in V, i in 1:k], Bin)
     @variable(model, W_min) # Poids de la classe la plus légère
 
-    # L'objectif est de maximiser le poids de la partition de poids minimum
+    # 2. L'objectif est de maximiser le poids de la partition de poids minimum
     @objective(model, Max, W_min)
     
-    # Contrainte de définition de W_min
+    # 3. Contraintes de Base (Problème Maître Initial)
+
+    # 3.1 Contrainte de définition de W_min
     for i in 1:k
         @constraint(model, W_min <= sum(w[v] * x[v, i] for v in V))
     end
     
-    # Contrainte de partition : chaque sommet est dans au plus une classe
+    # 3.2 Contrainte de partition : chaque sommet est dans au plus une classe
     # (permet les k-subpartitions, comme suggéré dans l'article)
     for v in V
         @constraint(model, sum(x[v, i] for i in 1:k) <= 1)
@@ -267,18 +329,20 @@ function solve_bcp_section2(instance_file::String, k::Int)
     println("Modèle initial créé. Lancement du Branch-and-Cut...")
 
 
+    #4. Configuration du Branch-and-Cut avec séparation de contraintes
+
     # Définir une limite de temps globale pour le solveur
     TIME_LIMIT_SECONDS = 100.0
     set_time_limit_sec(model, TIME_LIMIT_SECONDS)
 
 
-    # set_attribute(model, "LazyConstraints", 1) : Active l'ajout dynamique de contraintes 
+    # Active l'ajout dynamique de contraintes 
     # (Lazy Constraints) pendant l'arbre de Branch-and-Bound.
     set_attribute(model, "LazyConstraints", 1)
     
-        start_time = time()
+    start_time = time()
 
-    # set_attribute(model, MOI.LazyConstraintCallback(), ...) : 
+    
     # Enregistre la fonction 'separation_callback' comme la routine à exécuter
     # chaque fois que Gurobi trouve une solution entière (ou presque entière)
     # dans le Branch-and-Bound.
@@ -293,6 +357,8 @@ function solve_bcp_section2(instance_file::String, k::Int)
     optimize!(model)
     end_time = time()
 
+
+    # Affichage des résultats finaux
     println("==============================")
     println("Résultat Final (Formulation Section 2)")
     println("==============================")
@@ -328,6 +394,34 @@ function solve_bcp_section2(instance_file::String, k::Int)
     println("Nombre de nœuds B&C explorés : ", node_count(model))
 end
 
-file ="gg_05_05_a_1.in"
+
+
+#type du fichier
+
+
+file1 ="gg_05_05_a_1.in"
+#file2 ="gg_05_05_a_2.in"
+#file3 ="gg_05_05_a_3.in"
+#file4 ="gg_05_05_a_4.in"
+#file5 ="gg_15_15_a_1.in"
+#file6 ="rnd_20_30_a_1.in"
+#file7 ="rnd_20_30_a_2.in"
+#file8 ="rnd_20_50_a_1.in"
+
+
+#file9 ="gg_05_05_b_1.in"
+#file10 ="rnd_30_50_a_1.in"
+#file11 ="rnd_30_50_a_10.in"
+#file12 ="rnd_30_50_c_1.in"
+
+
+#file13 ="rnd_30_70_a_1.in"
+#file14 ="rnd_30_70_a_2.in"
+#file15 ="rnd_30_70_a_3.in"
+
+
+#nombre de classes
 k=2
-solve_bcp_section2(file, k)
+
+# appel de la fonction finale 
+solve_bcp_section2(file1, k)

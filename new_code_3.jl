@@ -355,9 +355,35 @@ function solve_bcp_section2(instance_file::String, k::Int)
     println("Nombre de nœuds B&C explorés : ", node_count(model))
 end
 
-file ="gg_05_05_a_1.in"
+
+
+#type du fichier
+
+
+file1 ="gg_05_05_a_1.in"
+#file2 ="gg_05_05_a_2.in"
+#file3 ="gg_05_05_a_3.in"
+#file4 ="gg_05_05_a_4.in"
+#file5 ="gg_15_15_a_1.in"
+#file6 ="rnd_20_30_a_1.in"
+#file7 ="rnd_20_30_a_2.in"
+#file8 ="rnd_20_50_a_1.in"
+
+
+#file9 ="gg_05_05_b_1.in"
+#file10 ="rnd_30_50_a_1.in"
+#file11 ="rnd_30_50_a_10.in"
+#file12 ="rnd_30_50_c_1.in"
+
+
+#file13 ="rnd_30_70_a_1.in"
+#file14 ="rnd_30_70_a_2.in"
+#file15 ="rnd_30_70_a_3.in"
+
+
+#nombre de classes
 k=2
-solve_bcp_section2(file, k)
 
+# appel de la fonction finale 
 
-
+solve_bcp_section2(file1, k)
