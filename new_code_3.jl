@@ -47,9 +47,11 @@ en exploitant les variables qui ont déjà atteint une valeur entière (0 ou 1) 
 2. Si  xtilde[v,i] =1 le sommet v et ses voisins assurément connectés à lui sont contractés.
 3. Si  xtilde[v,i] =0 le sommet v et ses arcs adjacents à la classe i sont exclus du modèle de flot pour la classe i
 """
-# ------------------------------------------------------------------
-# Fonction de séparation avec amélioration
-# ------------------------------------------------------------------
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
+#          Fonction find_violating_cut_optimized
+# -----------------------------------------------------------------
+# -----------------------------------------------------------------
 
 
 """
@@ -59,6 +61,8 @@ Procédure de séparation optimisée par 'Contraction d'arcs' (réduction du gra
 Le modèle de flot n'est construit que sur les sommets qui sont :
 1. Le séparateur (u et v).
 2. Les sommets dont la variable x[w, i] est fractionnaire (0 < x < 1).
+
+ceci réduit significativement la taille du PL de flot à chaque itération.
 """
 
 
@@ -67,8 +71,9 @@ function find_violating_cut_optimized(G::SimpleGraph, x_val::Dict, i::Int, u::In
     V = 1:n
     
     # 1. IDENTIFICATION DES SOMMETS PERTINENTS (V')
-    V_relevant = Int[] # Contient les indices des sommets originaux
-    node_map = Dict{Int, Int}() # Mappe l'ancien indice w vers le nouvel indice w'
+    # Les sommets avec x=0 ou x=1 sont contractés/exclus.
+    V_relevant = Int[] # Contient les indices des sommets originaux (sommets retenus)
+    node_map = Dict{Int, Int}() # Mappe l'ancien indice w vers le nouvel indice w'(réduit)
     
     # Les sommets avec x=0 ou x=1 sont contractés (c'est-à-dire exclus de la coupe)
     # On garde seulement les sommets fractionnaires + la paire {u, v}
@@ -90,18 +95,28 @@ function find_violating_cut_optimized(G::SimpleGraph, x_val::Dict, i::Int, u::In
          return 0.0, Int[]
     end
     
+
+    # Définition de la source et du puits dans le graphe réduit (taille 2 * n_prime)
     # Indices du graphe de flot (nouveaux) : w'_in = w', w'_out = n' + w'
     source_prime = node_map[u] + n_prime # u'_out
     sink_prime = node_map[v]      # v'_in
 
+
+
     flow_model = Model(Gurobi.Optimizer)
     set_silent(flow_model)
+
+
 
     # Le modèle de flot est de taille (2 * n_prime) x (2 * n_prime) : BEAUCOUP PLUS PETIT
     @variable(flow_model, f[1:(2n_prime), 1:(2n_prime)] >= 0)
 
+
+
     # Grande capacité (infinie) pour les arcs d'arêtes
     INF_CAPACITY = sum(w for w in values(x_val)) + 1.0
+
+
 
     # 2. CONSTRUCTION DU MODÈLE DE FLOT RÉDUIT
     
@@ -117,6 +132,7 @@ function find_violating_cut_optimized(G::SimpleGraph, x_val::Dict, i::Int, u::In
     end
 
     # 2.2. Contraintes de capacité des arêtes originales (infinie)
+    # On n'ajoute que les arêtes entre les sommets qui sont restés dans V'.
     for w in V_relevant
         w_out_prime = node_map[w] + n_prime
         
@@ -284,12 +300,7 @@ function solve_bcp_section2(instance_file::String, k::Int)
         @constraint(model, sum(x[v, i] for i in 1:k) <= 1)
     end
     
-    # --- Symétrie ---
-    # Pour casser la symétrie, on peut ordonner les poids des classes
-    # C'est l'inégalité (1) de l'article, mais elle est optionnelle si on maximise W_min
-    # for i in 1:k-1
-    #     @constraint(model, sum(w[v]*x[v,i] for v in V) <= sum(w[v]*x[v,i+1] for v in V))
-    # end
+    
     
     println("Modèle initial créé. Lancement du Branch-and-Cut...")
 
@@ -305,7 +316,7 @@ function solve_bcp_section2(instance_file::String, k::Int)
     
         start_time = time()
 
-    # set_attribute(model, MOI.LazyConstraintCallback(), ...) : 
+        
     # Enregistre la fonction 'separation_callback' comme la routine à exécuter
     # chaque fois que Gurobi trouve une solution entière (ou presque entière)
     # dans le Branch-and-Bound.
