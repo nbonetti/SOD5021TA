@@ -399,11 +399,11 @@ end
 #type du fichier
 
 
-file1 ="gg_05_05_a_1.in"
+#file1 ="gg_05_05_a_1.in"
 #file2 ="gg_05_05_a_2.in"
 #file3 ="gg_05_05_a_3.in"
 #file4 ="gg_05_05_a_4.in"
-#file5 ="gg_15_15_a_1.in"
+file5 ="gg_15_15_a_1.in" # too much time 
 #file6 ="rnd_20_30_a_1.in"
 #file7 ="rnd_20_30_a_2.in"
 #file8 ="rnd_20_50_a_1.in"
@@ -424,4 +424,4 @@ file1 ="gg_05_05_a_1.in"
 k=2
 
 # appel de la fonction finale 
-solve_bcp_section2(file1, k)
+solve_bcp_section2(file5, k)

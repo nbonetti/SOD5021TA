@@ -316,7 +316,7 @@ function solve_bcp_section2(instance_file::String, k::Int)
     
         start_time = time()
 
-        
+
     # Enregistre la fonction 'separation_callback' comme la routine à exécuter
     # chaque fois que Gurobi trouve une solution entière (ou presque entière)
     # dans le Branch-and-Bound.
@@ -371,7 +371,7 @@ end
 #type du fichier
 
 
-file1 ="gg_05_05_a_1.in"
+#file1 ="gg_05_05_a_1.in"
 #file2 ="gg_05_05_a_2.in"
 #file3 ="gg_05_05_a_3.in"
 #file4 ="gg_05_05_a_4.in"
@@ -389,7 +389,7 @@ file1 ="gg_05_05_a_1.in"
 
 #file13 ="rnd_30_70_a_1.in"
 #file14 ="rnd_30_70_a_2.in"
-#file15 ="rnd_30_70_a_3.in"
+file15 ="rnd_30_70_a_3.in"
 
 
 #nombre de classes
@@ -397,4 +397,4 @@ k=2
 
 # appel de la fonction finale 
 
-solve_bcp_section2(file1, k)
+solve_bcp_section2(file15, k)
