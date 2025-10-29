@@ -1,17 +1,18 @@
 using JuMP, Gurobi
 include("model1.jl")
+include("asymmetric_flow_model.jl")
 include("utils.jl")
 
 # ----------------------
 # Choix de l'instance et du modèle
 # ----------------------
-instance = "G_ex_papier.txt"
+instance = "gg_15_15_c_10.in"
 model = "flow"
 
 # ----------------------
 # Lire l'instance
 # ----------------------
-instance_path = "../instances/" * instance
+instance_path = "instances/" * instance
 E_list, W = readWeightedGraph_paper(instance_path)
 println("===== Recuperation de l'instance =====")
 println("Instance lue ", instance)
@@ -38,4 +39,6 @@ println("===============================\n\n")
 
 if model == "flow"
     run_flow_model(E_list, W, Wtot, n, V, k)
+elseif model == "asymmetric_flow"
+    run_asymmetric_flow_model(E_list, W, Wtot, n, V, k)
 end
