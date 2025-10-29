@@ -94,12 +94,6 @@ end
 
 
 function display_asymmetric_flow_results(model, y, A, W, k)
-    # Model Solving
-    println("Status = ", JuMP.termination_status(model))
-    println("Valeur optimale = ", JuMP.objective_value(model))
-    println("Temps de résolution (s) = ", JuMP.solve_time(model))
-
-
     # Dictionnaire pour stocker le résultat : Sommet -> Classe_Index (V -> i)
     partition = Dict{Int, Int}()
     wp = zeros(Int, k)  # Poids par classe
@@ -143,8 +137,12 @@ function display_asymmetric_flow_results(model, y, A, W, k)
     classes = [findall(v -> partition[v] == i, 1:n) for i in 1:k]
 
     println("\n\n===== Résultat final =====")
+    println("Status = ", JuMP.termination_status(model))
+    println("Valeur optimale = ", JuMP.objective_value(model))
+    println("Temps de résolution (s) = ", JuMP.solve_time(model))
     println("Nombres de classes souhaitées : ", k)
-    println("Partitions : ", classes)
+    # Decomenter pour afficher les partitions (je conseille de ne pas le faire pour des partitions trop longues)
+    # println("Partitions : ", classes)
     println("Poids par classe : ", wp, "  -> min = ", minw)
     println("===========================\n\n")
     

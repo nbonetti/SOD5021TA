@@ -2,34 +2,6 @@ using JuMP, Gurobi, Graphs
 import MathOptInterface as MOI
 
 # ------------------------------------------------------------------
-# Fonction de lecture du graphe (inchangée)
-# ------------------------------------------------------------------
-function readWeightedGraph_paper(file::String)
-    data = readlines(file)
-    line = split(data[2], " ")
-    n = parse(Int, line[1])
-    m = parse(Int, line[2])
-    W = zeros(Int, n)
-    E_list = []
-    for i in 1:n
-        line = split(data[3 + i], " ")
-        W[i] = parse(Int, line[4])
-    end
-    for i in 1:m
-        line = split(data[4 + n + i], " ")
-        orig = parse(Int, line[1])
-        dest = parse(Int, line[2])
-        push!(E_list, (orig + 1, dest + 1))
-    end
-    g = SimpleGraph(n)
-    for (u, v) in E_list
-        add_edge!(g, u, v)
-    end
-    w_dict = Dict(i => W[i] for i in 1:n)
-    return g, w_dict
-end
-
-# ------------------------------------------------------------------
 # Procédure de séparation (le cœur du problème)
 # ------------------------------------------------------------------
 
@@ -154,7 +126,7 @@ end
 
 
 """
-Callback de séparation pour les contraintes de connexité.
+Callback pour faire la séparation par les contraintes de connexité en restant dans la même optimisation.
 """
 function separation_callback(cb_data, x, G, k)
     n = nv(G)
@@ -198,16 +170,12 @@ end
 # ------------------------------------------------------------------
 # Programme principal
 # ------------------------------------------------------------------
-function solve_bcp_section2(instance_file::String, k::Int)
-    G, w = readWeightedGraph_paper(instance_file)
-    n = nv(G)
-    V = 1:n
-    
-    println("==============================")
-    println("Instance: $instance_file, k=$k")
-    println("Graphe créé avec $n sommets et $(ne(G)) arêtes.")
-    println("==============================")
-    
+function run_cut_based_connectivity_model(E_list, W, n, V, k)
+    G = SimpleGraph(n)
+    for (u, v) in E_list
+        add_edge!(G, u, v)
+    end
+    W_min = minimum(W)
     model = Model(Gurobi.Optimizer)
     
     set_optimizer_attribute(model, "TimeLimit", 100)
@@ -220,7 +188,7 @@ function solve_bcp_section2(instance_file::String, k::Int)
     
     # Contrainte de définition de W_min
     for i in 1:k
-        @constraint(model, W_min <= sum(w[v] * x[v, i] for v in V))
+        @constraint(model, W_min <= sum(W[v] * x[v, i] for v in V))
     end
     
     # Contrainte de partition : chaque sommet est dans au plus une classe
@@ -273,7 +241,7 @@ function solve_bcp_section2(instance_file::String, k::Int)
         println("\nDétail de la meilleure partition trouvée :")
         for i in 1:k
             partition_i = [v for v in V if value(x[v,i]) > 0.5]
-            weight_i = sum(w[v] for v in partition_i)
+            weight_i = sum(W[v] for v in partition_i)
             println("Classe $i (poids $weight_i): $partition_i")
         end
     else
@@ -283,7 +251,3 @@ function solve_bcp_section2(instance_file::String, k::Int)
     println("\nTemps total d'exécution : ", round(end_time - start_time, digits=2), "s")
     println("Nombre de nœuds B&C explorés : ", node_count(model))
 end
-
-file ="gg_05_05_a_1.in"
-k=2
-solve_bcp_section2(file, k)
