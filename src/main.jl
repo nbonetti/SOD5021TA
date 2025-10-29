@@ -1,12 +1,14 @@
 using JuMP, Gurobi
 include("flow.jl")
 include("asymmetric_flow.jl")
+include("cut_based_connectivity.jl")
+include("cut_based_cross.jl")
 include("utils.jl")
 
 # ----------------------
 # Choix de l'instance et du modèle
 # ----------------------
-instance = "gg_15_15_c_10.in"
+instance = "G_ex_papier.txt"
 model = "flow"
 
 # ----------------------
@@ -41,4 +43,8 @@ if model == "flow"
     run_flow_model(E_list, W, Wtot, n, V, k)
 elseif model == "asymmetric_flow"
     run_asymmetric_flow_model(E_list, W, Wtot, n, V, k)
+elseif model == "cut_based_connectivity"
+    run_cut_based_connectivity_model(E_list, W, n, V, k)
+elseif model == "cut_based_cross"
+    run_cut_based_cross_model(E_list, W, n, V, k)
 end

@@ -115,8 +115,12 @@ function display_results(model, y, A, sources, W, k)
     minw = minimum(wp)
 
     println("\n\n===== Résultat final =====")
+    println("Status = ", JuMP.termination_status(model))
+    println("Valeur optimale = ", JuMP.objective_value(model))
+    println("Temps de résolution (s) = ", JuMP.solve_time(model))
     println("Nombres de classes souhaitées : ", k)
-    println("Partitions : ", classes)
+    # Decomenter pour afficher les partitions (je conseille de ne pas le faire pour des partitions trop longues)
+    # println("Partitions : ", classes)
     println("Poids par classe : ", wp, "  -> min = ", minw)
     println("===========================\n\n")
 end 
