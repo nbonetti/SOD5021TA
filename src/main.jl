@@ -1,6 +1,6 @@
 using JuMP, Gurobi
-include("model1.jl")
-include("asymmetric_flow_model.jl")
+include("flow.jl")
+include("asymmetric_flow.jl")
 include("utils.jl")
 
 # ----------------------
