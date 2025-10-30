@@ -88,6 +88,7 @@ function solve_asymmetric_flow_model(model, y)
     # ----------------------
     # Résolution
     # ----------------------
+    set_time_limit_sec(model, 15*60)  # 15 minutes
     JuMP.optimize!(model)
     return model, y
 end
@@ -141,6 +142,8 @@ function display_asymmetric_flow_results(model, y, A, W, k)
     println("Valeur optimale = ", JuMP.objective_value(model))
     println("Temps de résolution (s) = ", JuMP.solve_time(model))
     println("Nombres de classes souhaitées : ", k)
+    println("Nombre de nœuds explorés = ", JuMP.node_count(model))
+    println("Valeur de la borne duale (Dual Bound) = ", JuMP.objective_bound(model))
     # Decomenter pour afficher les partitions (je conseille de ne pas le faire pour des partitions trop longues)
     # println("Partitions : ", classes)
     println("Poids par classe : ", wp, "  -> min = ", minw)

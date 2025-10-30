@@ -6,10 +6,14 @@ include("cut_based_cross.jl")
 include("utils.jl")
 
 # ----------------------
-# Choix de l'instance et du modèle
+# Choix de l'instance, du modèle et du nombre de partitions à faire
+# Choix parmi du modèle parmis: "flow", "asymmetric_flow", "cut_based_connectivity", "cut_based_cross"
+# Choix de l'instance parmi les fichiers dans le dossier "instances"
 # ----------------------
-instance = "gg_10_10_a_1.in"
-model = "flow"
+
+instance = "rnd_20_50_a_1.in"
+model = "cut_based_connectivity"
+k = 3
 
 # ----------------------
 # Lire l'instance
@@ -30,7 +34,6 @@ println("===============================\n\n")
 Wtot = sum(W)
 n = length(W)
 V = 1:n
-k = 2 
 println("===== Problème initialisé =====")
 println("Nombre de sommets (n)      : ", n)
 println("Nombre de partitions (k)    : ", k)
