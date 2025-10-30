@@ -8,7 +8,7 @@ include("utils.jl")
 # ----------------------
 # Choix de l'instance et du modèle
 # ----------------------
-instance = "G_ex_papier.txt"
+instance = "gg_10_10_a_1.in"
 model = "flow"
 
 # ----------------------
