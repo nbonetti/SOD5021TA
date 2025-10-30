@@ -44,7 +44,7 @@ function create_flow_model(E_list, W, Wtot, n, V, k)
     # (8)
     for v in V
         inflow = sum(f[Edge(u,v)] for u in V_and_sources if Edge(u,v) in A)
-        outflow = sum(f[Edge(v,u)] for u in V_and_sources if Edge(v,u) in A)
+        outflow = sum(f[Edge(v,u)] for u in V if Edge(v,u) in A)
         @constraint(model, inflow - outflow == W[v])
     end
 
@@ -71,6 +71,7 @@ function solve_flow_model(model, y)
     # ----------------------
     # Résolution
     # ----------------------
+    set_time_limit_sec(model, 15*60)  # 15 minutes
     JuMP.optimize!(model)
     return model, y
 end
@@ -79,7 +80,7 @@ function display_results(model, y, A, sources, W, k)
     # Model Solving
     println("Status = ", JuMP.termination_status(model))
     println("Valeur optimale = ", JuMP.objective_value(model))
-    println("Temps de résolution (s) = ", JuMP.solve_time(model))
+    println("Nombre de nœuds explorés = ", JuMP.node_count(model))
 
     # # Visualisation des variables
     yval = value.(y)
@@ -118,6 +119,8 @@ function display_results(model, y, A, sources, W, k)
     println("Status = ", JuMP.termination_status(model))
     println("Valeur optimale = ", JuMP.objective_value(model))
     println("Temps de résolution (s) = ", JuMP.solve_time(model))
+    println("Nombre de nœuds explorés = ", JuMP.node_count(model))
+    println("Valeur de la borne duale (Dual Bound) = ", JuMP.objective_bound(model))
     println("Nombres de classes souhaitées : ", k)
     # Decomenter pour afficher les partitions (je conseille de ne pas le faire pour des partitions trop longues)
     # println("Partitions : ", classes)
